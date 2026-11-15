@@ -28,7 +28,8 @@ report() {
   phase=$(printf '%s' "$1" | jq -r '.status.phase // "Pending"')
   case "$phase" in
     Succeeded | Failed)
-      printf '%s' "$1" | jq -r '.status.output // empty'
+      # -j: the output as it was, without a line break added at the end.
+      printf '%s' "$1" | jq -j '.status.output // empty'
       printf '%s' "$1" | jq -r 'if .status.outputTruncated then "[only the end of the output was kept]" else empty end' >&2
       printf '%s' "$1" | jq -r '.status.message // empty' >&2
       echo "$phase with exit code $(printf '%s' "$1" | jq -r '.status.exitCode // "unknown"'), approved by $(printf '%s' "$1" | jq -r '.status.decidedBy // "unknown"')." >&2
@@ -68,13 +69,19 @@ case "${1:-}" in
     done
     [ -n "$reason" ] && [ "${1:-}" = kubectl ] || usage
     requester=$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')
+    # One argument at a time, each as a value: jq would read a command's own flags
+    # (and its "--") as options if they were handed over as a list.
+    command='[]'
+    for argument in "$@"; do
+      command=$(jq -cn --argjson command "$command" --arg argument "$argument" '$command + [$argument]')
+    done
     name=$(
       jq -n --arg reason "$reason" --arg requester "$requester" --arg session "$session" \
-        --argjson timeout "$timeout" --arg namespace "$NAMESPACE" '
+        --argjson timeout "$timeout" --arg namespace "$NAMESPACE" --argjson command "$command" '
         {apiVersion: "cerberus.labmox.internal/v1", kind: "CommandRequest",
          metadata: {generateName: "req-", namespace: $namespace},
-         spec: ({command: $ARGS.positional, reason: $reason, requester: $requester, timeoutSeconds: $timeout}
-                + (if $session == "" then {} else {session: $session} end))}' --args "$@" |
+         spec: ({command: $command, reason: $reason, requester: $requester, timeoutSeconds: $timeout}
+                + (if $session == "" then {} else {session: $session} end))}' |
         kubectl create -f - -o jsonpath='{.metadata.name}'
     )
     echo "Filed $name. It is approved or denied at:"
