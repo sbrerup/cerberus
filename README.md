@@ -124,7 +124,13 @@ npm ci
 npm test            # node --test
 npm run typecheck
 docker build .      # runs both, as the image workflow does
+npm run dev         # the page on this machine, with made-up requests and a pretend kubectl
 ```
+
+The tests call the page the way a test can, and that is not the way a browser does. The
+first version refused every real approval, because of a header the page itself set, and
+all its tests passed. So after changing the forms, the checks around them or the
+headers, run `npm run dev` and approve and deny a request in a real browser.
 
 - `server/policy.ts` decides what may be asked and what the page points out.
 - `server/gate.ts` holds the decisions: who may approve, what may still be approved,

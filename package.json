@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node server/index.ts",
+    "dev": "node scripts/dev.ts",
     "test": "node --test \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
