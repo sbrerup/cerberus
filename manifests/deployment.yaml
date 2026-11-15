@@ -31,7 +31,7 @@ spec:
         - name: cerberus
           # Pinned by digest, so what runs with cluster-admin rights is one known image.
           # Renovate proposes the new digest after each build.
-          image: ghcr.io/sbrerup/cerberus:latest@sha256:4b540b19a6c1ba45196807855e7e0a9eba20b25c1f0bd63a27c90340cd42ff21
+          image: ghcr.io/sbrerup/cerberus:latest@sha256:58f47822603d70ebae6be06318d445d8df8fd3d30494247e2a3e96e62d22df25
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
