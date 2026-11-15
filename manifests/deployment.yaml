@@ -29,9 +29,10 @@ spec:
           type: RuntimeDefault
       containers:
         - name: cerberus
-          # Renovate replaces this with a digest pin once the first image exists.
-          image: ghcr.io/sbrerup/cerberus:latest
-          imagePullPolicy: Always
+          # Pinned by digest, so what runs with cluster-admin rights is one known image.
+          # Renovate proposes the new digest after each build.
+          image: ghcr.io/sbrerup/cerberus:latest@sha256:4b540b19a6c1ba45196807855e7e0a9eba20b25c1f0bd63a27c90340cd42ff21
+          imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
