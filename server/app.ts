@@ -43,7 +43,9 @@ const HTML_HEADERS = {
   "Cache-Control": "no-store",
   "Content-Security-Policy": "default-src 'none'; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
   "X-Content-Type-Options": "nosniff",
-  "Referrer-Policy": "no-referrer",
+  // Not "no-referrer": with that, a browser sends "Origin: null" with the page's own
+  // forms, and they would look like they came from nowhere.
+  "Referrer-Policy": "same-origin",
 };
 
 export class App {
@@ -92,9 +94,14 @@ export class App {
     const form = new URLSearchParams(req.body ?? "");
     const digest = this.gate.digest(request.spec);
 
-    // A browser says where a form was posted from. Another site's page cannot pass either check.
+    // The token is what proves the tap came from this page: no other site can read it.
+    // A browser also says where a form was posted from, and a tap that plainly came from
+    // elsewhere is refused whatever it carries. Some browsers and privacy settings say
+    // "null" or nothing instead, and that alone is no reason to refuse the owner.
     const origin = req.headers.origin;
-    const fromThisPage = (origin === undefined || origin === this.options.origin) && same(form.get("token") ?? "", this.token(user, action, name, digest));
+    const site = req.headers["sec-fetch-site"];
+    const fromElsewhere = (origin !== undefined && origin !== "null" && origin !== this.options.origin) || (site !== undefined && site !== "same-origin" && site !== "none");
+    const fromThisPage = !fromElsewhere && same(form.get("token") ?? "", this.token(user, action, name, digest));
     if (!fromThisPage) return html(403, this.detail(request, user, "That did not come from this page. Read the request again and decide here."));
 
     try {

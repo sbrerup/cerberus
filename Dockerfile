@@ -3,7 +3,8 @@ FROM registry.k8s.io/kubectl:v1.35.10@sha256:4e1d541a3d62f74637974e4c71f3cea91b9
 FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS check
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# jq is for the tests of client/kube-request, which is a shell script.
+RUN apk add --no-cache jq && npm ci --no-audit --no-fund
 COPY . .
 # A failing type check or test stops the image from being built at all.
 RUN npm run typecheck && npm test

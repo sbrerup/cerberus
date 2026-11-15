@@ -92,7 +92,7 @@ test("a tap that did not come from the page decides nothing", async () => {
   requests.add("req-1");
   requests.add("req-2");
   const page = await sebastian.get("/r/req-1");
-  const approve = { ...form(page, "/r/req-1/approve"), read: "on" };
+  const approve: Record<string, string> = { ...form(page, "/r/req-1/approve"), read: "on" };
   const deny = form(page, "/r/req-1/deny");
   const other = form(await sebastian.get("/r/req-2"), "/r/req-2/approve");
 
@@ -103,13 +103,46 @@ test("a tap that did not come from the page decides nothing", async () => {
     sebastian.post("/r/req-1/approve", { ...approve, token: deny.token! }),
     sebastian.post("/r/req-1/approve", { ...approve, token: other.token! }),
     sebastian.post("/r/req-1/approve", approve, { origin: "https://evil.example" }),
-    sebastian.post("/r/req-1/approve", approve, { origin: "null" }),
+    sebastian.post("/r/req-1/approve", approve, { origin: "https://evil.example", "sec-fetch-site": "cross-site" }),
+    sebastian.post("/r/req-1/approve", approve, { origin: ORIGIN, "sec-fetch-site": "cross-site" }),
+    sebastian.post("/r/req-1/approve", approve, { origin: "null", "sec-fetch-site": "cross-site" }),
+    sebastian.post("/r/req-1/approve", approve, { "sec-fetch-site": "same-site" }),
+    // Another site that hides where its form came from still has no token to send.
+    sebastian.post("/r/req-1/approve", { read: "on", digest: approve.digest! }, { origin: "null" }),
   ];
   for (const attempt of attempts) assert.equal((await attempt).status, 403);
   await gate.idle();
 
   assert.equal(kubectl.ran.length, 0);
   assert.equal(phaseOf((await requests.get("req-1"))!), "Pending");
+});
+
+test("the page's own form is accepted however the browser describes where it came from", async () => {
+  // What browsers really send with a form of this page. Chrome and Edge sent the second
+  // one while the page asked for no referrer, and the owner's approval was refused.
+  const ways: Record<string, string>[] = [
+    { origin: ORIGIN, "sec-fetch-site": "same-origin" },
+    { origin: "null", "sec-fetch-site": "same-origin" },
+    { origin: ORIGIN },
+    { origin: "null" },
+    {},
+  ];
+  for (const headers of ways) {
+    const { requests, kubectl, gate, sebastian } = site();
+    requests.add("req-1");
+    const page = await sebastian.get("/r/req-1");
+    const answer = await sebastian.post("/r/req-1/approve", { ...form(page, "/r/req-1/approve"), read: "on" }, headers);
+    await gate.idle();
+    assert.equal(answer.status, 303, JSON.stringify(headers));
+    assert.equal(kubectl.ran.length, 1, JSON.stringify(headers));
+  }
+});
+
+test("the page lets the browser say where its own forms come from", async () => {
+  const { requests, sebastian } = site();
+  requests.add("req-1");
+  const page = await sebastian.get("/r/req-1");
+  assert.equal(page.headers["Referrer-Policy"], "same-origin");
 });
 
 test("the box has to be ticked", async () => {
