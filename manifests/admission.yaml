@@ -1,0 +1,32 @@
+# The page shows who asked, and cerberus only accepts requests from accounts on its
+# list. Both rest on spec.requester being true, so the cluster checks it at filing:
+# nobody can file a request in another account's name.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: cerberus-requests-name-their-requester
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    matchPolicy: Equivalent
+    resourceRules:
+      - apiGroups: [cerberus.labmox.internal]
+        apiVersions: ["*"]
+        operations: [CREATE]
+        resources: [commandrequests]
+  validations:
+    - expression: object.spec.requester == request.userInfo.username
+      message: spec.requester must be the account that files the request.
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: cerberus-requests-name-their-requester
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  policyName: cerberus-requests-name-their-requester
+  validationActions: [Deny]

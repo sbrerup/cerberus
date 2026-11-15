@@ -1,0 +1,19 @@
+{
+  "name": "cerberus",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A page where one person approves single kubectl commands that an agent asks for",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server/index.ts",
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}

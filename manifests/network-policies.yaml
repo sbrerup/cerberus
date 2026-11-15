@@ -1,0 +1,70 @@
+# cerberus can do anything in the cluster once a person approves, and it believes the
+# login the Tailscale proxy reports. So it only accepts traffic from that proxy, and it
+# can reach nothing but DNS and the Kubernetes API: no LAN, no tailnet, no internet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: cerberus
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cerberus-ingress
+  namespace: cerberus
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cerberus
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cerberus-egress
+  namespace: cerberus
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cerberus
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+# A plain NetworkPolicy can't select the API server under Cilium: it runs on the node,
+# and CIDR rules don't apply to node addresses.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cerberus-kube-api
+  namespace: cerberus
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: cerberus
+  egress:
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP

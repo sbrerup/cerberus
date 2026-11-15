@@ -1,0 +1,101 @@
+# A CommandRequest is one kubectl command an agent asks a person to approve.
+# The agent may create one and read it. Only cerberus writes the status.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: commandrequests.cerberus.labmox.internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  group: cerberus.labmox.internal
+  scope: Namespaced
+  names:
+    kind: CommandRequest
+    listKind: CommandRequestList
+    plural: commandrequests
+    singular: commandrequest
+    shortNames: [cmdreq]
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+          description: Empty while it waits for a decision.
+        - name: Exit
+          type: integer
+          jsonPath: .status.exitCode
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [command, reason, requester]
+              x-kubernetes-validations:
+                # What a person approved must be what runs, so nothing changes after filing.
+                - rule: self == oldSelf
+                  message: A request cannot be changed after it is filed. File a new one.
+              properties:
+                command:
+                  description: The exact arguments, starting with kubectl. Never passed through a shell.
+                  type: array
+                  minItems: 2
+                  maxItems: 64
+                  items:
+                    type: string
+                    maxLength: 4096
+                  x-kubernetes-validations:
+                    - rule: self[0] == 'kubectl'
+                      message: The command must start with kubectl.
+                reason:
+                  description: Why this is needed, for the person who decides.
+                  type: string
+                  minLength: 10
+                  maxLength: 2000
+                requester:
+                  description: The account that files the request. The cluster refuses a request that names another.
+                  type: string
+                  minLength: 1
+                  maxLength: 253
+                session:
+                  description: Which chat is asking, in its own words. Shown to the person, never trusted.
+                  type: string
+                  maxLength: 500
+                timeoutSeconds:
+                  description: How long the command may run before it is stopped.
+                  type: integer
+                  minimum: 5
+                  maximum: 3600
+                  default: 300
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Approved, Denied, Expired, Running, Succeeded, Failed]
+                decidedBy:
+                  type: string
+                decidedAt:
+                  type: string
+                startedAt:
+                  type: string
+                finishedAt:
+                  type: string
+                exitCode:
+                  type: integer
+                output:
+                  description: The end of what the command printed, stdout and stderr together.
+                  type: string
+                outputTruncated:
+                  type: boolean
+                message:
+                  type: string

@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cerberus
+  namespace: cerberus
+  annotations:
+    # Admin UI: only the owner may reach it (see the tailnet policy). The agents that
+    # file requests are tagged machines, and the policy keeps them away from this tag.
+    tailscale.com/tags: tag:k8s-admin
+spec:
+  ingressClassName: tailscale
+  tls:
+    - hosts:
+        - cerberus
+  rules:
+    - host: cerberus
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cerberus
+                port:
+                  number: 80

@@ -1,0 +1,109 @@
+#!/bin/sh
+# Asks a person to approve one kubectl command that changes the cluster, through cerberus.
+#
+#   kube-request ask --reason "why" [--timeout seconds] [--session "which chat"] -- kubectl ...
+#       Files the request. Prints its name and the page where it is approved or denied.
+#   kube-request wait <name> [--for seconds]
+#       Waits for the decision and for the command to finish. Prints what the command
+#       printed and exits with its exit code. Other exits: 10 denied, 11 expired,
+#       12 still undecided or still running when the wait ended (30 minutes by default).
+#   kube-request show <name>
+#       Where the request stands, without waiting.
+#
+# The command is run exactly as given, with no shell, no terminal, no files and no
+# input. Needs kubectl (with an account that may file requests) and jq.
+set -eu
+
+NAMESPACE=${CERBERUS_NAMESPACE:-cerberus}
+PAGE=${CERBERUS_URL:-https://cerberus.turtle-vector.ts.net}
+KIND=commandrequests.cerberus.labmox.internal
+
+usage() {
+  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 2
+}
+
+# Prints the request's phase, and for a finished one what it printed.
+report() {
+  phase=$(printf '%s' "$1" | jq -r '.status.phase // "Pending"')
+  case "$phase" in
+    Succeeded | Failed)
+      printf '%s' "$1" | jq -r '.status.output // empty'
+      printf '%s' "$1" | jq -r 'if .status.outputTruncated then "[only the end of the output was kept]" else empty end' >&2
+      printf '%s' "$1" | jq -r '.status.message // empty' >&2
+      echo "$phase with exit code $(printf '%s' "$1" | jq -r '.status.exitCode // "unknown"'), approved by $(printf '%s' "$1" | jq -r '.status.decidedBy // "unknown"')." >&2
+      ;;
+    Denied) echo "Denied by $(printf '%s' "$1" | jq -r '.status.decidedBy // "unknown"'). The command was not run." >&2 ;;
+    Expired) echo "Expired: nobody answered in time. The command was not run. Ask again if it is still needed." >&2 ;;
+    Pending) echo "Still waiting for a decision at $PAGE/r/$(printf '%s' "$1" | jq -r .metadata.name)" >&2 ;;
+    *) echo "$phase." >&2 ;;
+  esac
+}
+
+# The exit code that goes with a phase.
+code() {
+  case "$(printf '%s' "$1" | jq -r '.status.phase // "Pending"')" in
+    Succeeded) echo 0 ;;
+    Failed) printf '%s' "$1" | jq -r '.status.exitCode // 1' ;;
+    Denied) echo 10 ;;
+    Expired) echo 11 ;;
+    *) echo 12 ;;
+  esac
+}
+
+case "${1:-}" in
+  ask)
+    shift
+    reason=""
+    timeout=300
+    session=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --reason) reason=$2; shift 2 ;;
+        --timeout) timeout=$2; shift 2 ;;
+        --session) session=$2; shift 2 ;;
+        --) shift; break ;;
+        *) usage ;;
+      esac
+    done
+    [ -n "$reason" ] && [ "${1:-}" = kubectl ] || usage
+    requester=$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')
+    name=$(
+      jq -n --arg reason "$reason" --arg requester "$requester" --arg session "$session" \
+        --argjson timeout "$timeout" --arg namespace "$NAMESPACE" '
+        {apiVersion: "cerberus.labmox.internal/v1", kind: "CommandRequest",
+         metadata: {generateName: "req-", namespace: $namespace},
+         spec: ({command: $ARGS.positional, reason: $reason, requester: $requester, timeoutSeconds: $timeout}
+                + (if $session == "" then {} else {session: $session} end))}' --args "$@" |
+        kubectl create -f - -o jsonpath='{.metadata.name}'
+    )
+    echo "Filed $name. It is approved or denied at:"
+    echo "$PAGE/r/$name"
+    echo "Give that link and the reason to the person, then run: kube-request wait $name"
+    ;;
+  wait)
+    name=${2:-}
+    [ -n "$name" ] || usage
+    limit=1800
+    [ "${3:-}" = --for ] && limit=${4:-1800}
+    deadline=$(($(date +%s) + limit))
+    while :; do
+      json=$(kubectl -n "$NAMESPACE" get "$KIND" "$name" -o json)
+      case "$(printf '%s' "$json" | jq -r '.status.phase // "Pending"')" in
+        Succeeded | Failed | Denied | Expired) break ;;
+      esac
+      [ "$(date +%s)" -lt "$deadline" ] || break
+      sleep 3
+    done
+    report "$json"
+    exit "$(code "$json")"
+    ;;
+  show)
+    name=${2:-}
+    [ -n "$name" ] || usage
+    json=$(kubectl -n "$NAMESPACE" get "$KIND" "$name" -o json)
+    printf '%s' "$json" | jq -r '"Command: " + (.spec.command | join(" ")), "Reason:  " + .spec.reason'
+    report "$json"
+    ;;
+  *) usage ;;
+esac

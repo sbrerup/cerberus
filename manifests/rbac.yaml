@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cerberus
+  namespace: cerberus
+---
+# What cerberus needs for its own bookkeeping: read the requests, write their status.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cerberus
+  namespace: cerberus
+rules:
+  - apiGroups: [cerberus.labmox.internal]
+    resources: [commandrequests]
+    verbs: [get, list, watch]
+  - apiGroups: [cerberus.labmox.internal]
+    resources: [commandrequests/status]
+    verbs: [get, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cerberus
+  namespace: cerberus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cerberus
+subjects:
+  - kind: ServiceAccount
+    name: cerberus
+    namespace: cerberus
+---
+# An approved command may do anything in the cluster: that was the owner's choice, and
+# it is why each one is read and approved by a person first. This is the whole of the
+# power behind the page, so everything else here exists to keep the page honest.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cerberus-runs-approved-commands
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: cerberus
+    namespace: cerberus
+---
+# What an agent may do here: file a request and read what became of it. It cannot change
+# or delete a request, and it cannot write a status, so it cannot approve anything.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cerberus-requester
+  namespace: cerberus
+rules:
+  - apiGroups: [cerberus.labmox.internal]
+    resources: [commandrequests]
+    verbs: [create, get, list, watch]
+---
+# daedalus is the VM the owner's Claude Code sessions run on. Its account is made in
+# sbrerup/dripcloud (manifests/daedalus-access) and can otherwise only read.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cerberus-requester-daedalus
+  namespace: cerberus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cerberus-requester
+subjects:
+  - kind: ServiceAccount
+    name: daedalus
+    namespace: daedalus-access
